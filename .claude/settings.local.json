@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php artisan tinker '--execute=:*)",
+      "Bash(curl -s -X POST http://print.test/api/print/thermal -H 'Content-Type: application/json' -d '{\"content\":{\"title\":\"PRUEBA DOLAR\",\"folio\":\"001\",\"fecha\":\"2026-04-01\",\"cliente\":\"Test\",\"vendedor\":\"Vendedor\",\"items\":[{\"modelo\":\"Producto\",\"cantidad\":1,\"precio\":100,\"subtotal\":100}],\"subtotal\":100,\"total\":100}}')",
+      "Bash(powershell:*)",
+      "Bash(curl:*)",
+      "Bash(printf '\\\\x1B\\\\x40DOLLAR:\\\\x24\\\\n')",
+      "Bash(grep -n \"------\\\\|======\" /c/laragon/www/Print/app/Http/Controllers/PrintController.php)"
+    ]
+  }
+}
