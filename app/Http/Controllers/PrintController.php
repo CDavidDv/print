@@ -22,6 +22,11 @@ class PrintController extends Controller
             'normalPrinter' => 'Microsoft Print to PDF',
             'normalPaperSize' => 'Letter',
             'currency' => '$',
+            'address' => [
+                'Plaza las Américas, Local',
+                '4B, Valle de San Javier,',
+                'Pachuca'
+            ],
             'defaults' => [
                 'title' => 'NOTA DE VENTA',
                 'footer' => 'Gracias por su compra',
@@ -103,106 +108,143 @@ class PrintController extends Controller
 
             $W = 32; // Font A standard = ~32 caracteres por línea
 
-            // PASO 4: Escribir contenido con fopen/fwrite (método que funciona)
-            fwrite($fp, "====================");
-            fwrite($fp, "\x0A");
-            fwrite($fp, strtoupper($content['title'] ?? 'NOTA DE VENTA'));
-            fwrite($fp, "\x0A");
-            fwrite($fp, "====================");
-            fwrite($fp, "\x0A\x0A");
+            // PASO 4: Nuevo formato de ticket (estructura según el diseño requerido)
+            $W = 25; // Ancho para separadores
 
-            fwrite($fp, "Folio: ");
-            fwrite($fp, ($content['folio'] ?? ''));
-            fwrite($fp, "\x0A");
+            // Separador después del logo
+            fwrite($fp, str_repeat('-', 25) . "\x0A");
 
-            fwrite($fp, "Fecha: ");
-            fwrite($fp, ($content['fecha'] ?? ''));
-            fwrite($fp, "\x0A");
-            fwrite($fp, "--------------------");
-            fwrite($fp, "\x0A");
+            // Separadores y título
+            fwrite($fp, str_repeat('=', $W) . "\x0A");
+            fwrite($fp, $this->centerText('TICKET DE VENTA', $W) . "\x0A");
+            fwrite($fp, str_repeat('=', $W) . "\x0A");
 
-            fwrite($fp, "Cliente: ");
-            fwrite($fp, mb_substr($content['cliente'] ?? '', 0, 22)); // 9 + 23 = 32
+            // Dirección de la tienda (centrada)
+            $address = $config['address'] ?? [];
+            foreach ($address as $line) {
+                fwrite($fp, $this->centerText($line, 32) . "\x0A");
+            }
             fwrite($fp, "\x0A");
 
-            fwrite($fp, "Vendedor: ");
-            fwrite($fp, mb_substr($content['vendedor'] ?? '', 0, 21)); // 10 + 22 = 32
-            fwrite($fp, "\x0A");
-            fwrite($fp, "--------------------\x0A\x0A");
+            // Folio y Fecha
+            fwrite($fp, $this->centerText('Folio: ' . ($content['folio'] ?? ''), $W) . "\x0A");
+            fwrite($fp, 'Fecha: ' . ($content['fecha'] ?? '') . "\x0A");
+            fwrite($fp, $this->centerText(str_repeat('-', 20), $W) . "\x0A");
 
-            fwrite($fp, "MODELO      CANT x");
-            fwrite($fp, $currency); // Escribir $ directamente como byte
-            fwrite($fp, "\x0A");
-            fwrite($fp, "--------------------\x0A");
+            // Cliente y Vendedor
+            fwrite($fp, 'Cliente: ' . mb_substr($content['cliente'] ?? '', 0, 16) . "\x0A");
+            fwrite($fp, 'Vendedor: ' . mb_substr($content['vendedor'] ?? '', 0, 15) . "\x0A");
+            fwrite($fp, str_repeat('-', $W) . "\x0A");
 
+            // Encabezado de productos
+            fwrite($fp, 'Cant  Modelo        Monto' . "\x0A");
+            fwrite($fp, str_repeat('-', $W) . "\x0A");
+
+            // Items
             foreach ($content['items'] ?? [] as $item) {
-                $modelo = mb_substr($item['modelo'] ?? '', 0, 10);
-                $qty = $item['cantidad'] ?? 1;
-                $price = $this->fmtN($item['precio'] ?? 0);
-                $subtotal = $this->fmtN($item['subtotal'] ?? 0);
-
-                // Línea 1: Nombre del producto (truncado)
-                if (! empty($item['nombre'])) {
-                    fwrite($fp, mb_substr($item['nombre'], 0, 28)); // Máximo 28 caracteres
-                    fwrite($fp, "\x0A");
-                }
-
-                // Línea 2: Modelo, Cantidad x Precio
-                fwrite($fp, $modelo);
-                fwrite($fp, " ");
-                fwrite($fp, $qty);
-                fwrite($fp, "x");
-                fwrite($fp, $currency);
-                fwrite($fp, $price);
-                fwrite($fp, "\x0A");
-
-                // Línea 3: Subtotal
-                fwrite($fp, "Subtotal: ");
-                fwrite($fp, $currency);
-                fwrite($fp, $subtotal);
-                fwrite($fp, "\x0A");
+                $cant = $item['cantidad'] ?? 1;
+                $modelo = mb_substr($item['modelo'] ?? '', 0, 12);
+                $subtotal = $currency . $this->fmtN($item['subtotal'] ?? 0);
+                fwrite($fp, $this->fmtItem($cant, $modelo, $subtotal, $W) . "\x0A");
             }
 
-            fwrite($fp, "--------------------\x0A");
-            fwrite($fp, "Subtotal: ");
-            fwrite($fp, $currency);
-            fwrite($fp, $this->fmtN($content['subtotal'] ?? 0));
-            fwrite($fp, "\x0A");
+            fwrite($fp, str_repeat('-', $W) . "\x0A");
 
-            if (($content['descuento'] ?? 0) > 0) {
-                fwrite($fp, "Descuento: -");
-                fwrite($fp, $currency);
-                fwrite($fp, $this->fmtN($content['descuento']));
-                fwrite($fp, "\x0A");
-            }
+            // IVA (calculado al 16% si no viene en el request)
+            $subtotal = floatval($content['subtotal'] ?? 0);
+            $iva = $content['iva'] ?? ($subtotal * 0.16);
+            fwrite($fp, $this->fmtLine('IVA:', $currency . $this->fmtN($iva), $W) . "\x0A");
+            fwrite($fp, $this->fmtLine('Subtotal:', $currency . $this->fmtN($subtotal), $W) . "\x0A");
+            fwrite($fp, str_repeat('-', $W) . "\x0A");
 
-            if (($content['envio'] ?? 0) > 0) {
-                fwrite($fp, "Envio: ");
-                fwrite($fp, $currency);
-                fwrite($fp, $this->fmtN($content['envio']));
-                fwrite($fp, "\x0A");
-            }
-
-            fwrite($fp, "====================\x0A");
-            fwrite($fp, "TOTAL: ");
-            fwrite($fp, $currency);
-            fwrite($fp, $this->fmtN($content['total'] ?? 0));
-            fwrite($fp, "\x0A");
-            fwrite($fp, "====================\x0A\x0A");
-
+            // Método de pago
+            $metodoPago = 'N/A';
             if (! empty($content['pagos'])) {
+                $modos = [];
                 foreach ($content['pagos'] as $p) {
-                    fwrite($fp, ($p['modo_pago'] ?? ''));
-                    fwrite($fp, ": ");
-                    fwrite($fp, $currency);
-                    fwrite($fp, $this->fmtN($p['monto']));
-                    fwrite($fp, "\x0A");
+                    if (! empty($p['modo_pago'])) {
+                        $modos[] = $p['modo_pago'];
+                    }
                 }
-                fwrite($fp, "\x0A");
+                if (! empty($modos)) {
+                    $metodoPago = implode(', ', $modos);
+                }
+            }
+            fwrite($fp, 'Metodo de pago: ' . mb_substr($metodoPago, 0, 9) . "\x0A");
+            fwrite($fp, "\x0A");
+
+            // QR de facturación (primero)
+            $qrPath = public_path('images/facturacionqr.png');
+            if (file_exists($qrPath)) {
+                try {
+                    fwrite($fp, $this->centerText('Para facturacion:', 32) . "\x0A");
+
+                    $qrTmp = tempnam(sys_get_temp_dir(), 'qr_').'.prn';
+                    $qrConnector = new FilePrintConnector($qrTmp);
+                    $qrPrinter = new Printer($qrConnector);
+
+                    // QR más grande: 380px para que ocupe casi todo el ancho
+                    $qrResized = $this->resizeLogo($qrPath, 380);
+                    $qrImage = EscposImage::load($qrResized, false);
+                    $qrPrinter->setJustification(Printer::JUSTIFY_CENTER);
+                    $qrPrinter->bitImage($qrImage);
+                    $qrPrinter->feed(1);
+                    $qrPrinter->close();
+
+                    $qrBytes = file_get_contents($qrTmp);
+
+                    // Remover ESC @ inicial si existe
+                    if (substr($qrBytes, 0, 2) === "\x1B\x40") {
+                        $qrBytes = substr($qrBytes, 2);
+                    }
+
+                    fwrite($fp, $qrBytes);
+
+                    @unlink($qrTmp);
+                    if ($qrResized !== $qrPath) {
+                        @unlink($qrResized);
+                    }
+
+                    // Reiniciar code page después del QR
+                    fwrite($fp, "\x1B\x74\x00");  // ESC t 0 - PC437
+                    fwrite($fp, "\x0A");
+
+                    \Log::info('QR image added successfully');
+                } catch (\Exception $e) {
+                    \Log::error('QR error: ' . $e->getMessage());
+                    // Continuar sin QR
+                }
             }
 
-            fwrite($fp, ($content['footer'] ?? 'Gracias por su compra'));
             fwrite($fp, "\x0A");
+
+            // Código de barras CODE128 del folio (después del QR)
+            if (! empty($content['folio'])) {
+                $folioStr = (string)$content['folio'];
+
+                // Centrar barcode
+                fwrite($fp, "\x1B\x61\x01");  // ESC a 1 - Center
+
+                // Configurar altura del barcode
+                fwrite($fp, "\x1D\x68\x50");  // GS h 80 (altura 80 dots)
+
+                // Ancho del módulo
+                fwrite($fp, "\x1D\x77\x02");  // GS w 2 (ancho módulo 2)
+
+                // HRI (Human Readable Interpretation) - mostrar texto debajo
+                fwrite($fp, "\x1D\x48\x02");  // GS H 2 (mostrar HRI debajo)
+
+                // Imprimir CODE128
+                fwrite($fp, "\x1D\x6B\x49");  // GS k I (CODE128 extended)
+                fwrite($fp, chr(strlen($folioStr)));  // Longitud
+                fwrite($fp, $folioStr);  // Datos
+                fwrite($fp, "\x0A");
+
+                // Restaurar alineación izquierda
+                fwrite($fp, "\x1B\x61\x00");  // ESC a 0 - Left
+            }
+
+            fwrite($fp, $this->centerText($content['footer'] ?? 'Gracias por su compra', 32) . "\x0A");
 
             // Comandos finales
             fwrite($fp, "\x1B\x64\x03");  // ESC d 3 - Print + feed 3 lines
@@ -535,6 +577,9 @@ HTML;
             if ($request->has('currency')) {
                 $config['currency'] = $request->input('currency');
             }
+            if ($request->has('address')) {
+                $config['address'] = $request->input('address');
+            }
             if ($request->has('defaults')) {
                 $config['defaults'] = array_merge($config['defaults'], $request->input('defaults'));
             }
@@ -675,6 +720,39 @@ HTML;
         $pad = max(1, intdiv($avail - strlen($c), 2));
 
         return $l.str_repeat(' ', $pad).$c.str_repeat(' ', $avail - $pad - strlen($c)).$r;
+    }
+
+    /**
+     * Formato de línea de ítem: Cant | Modelo | Monto (3 columnas)
+     * Cant: 4 chars left-aligned
+     * Modelo: 12 chars left-aligned, truncated
+     * Monto: right-aligned in remaining space
+     */
+    private function fmtItem($cant, $modelo, $monto, $width = 25)
+    {
+        $cant = str_pad((string)$cant, 4, ' ');
+        $modelo = str_pad(mb_substr($modelo, 0, 12), 12, ' ');
+        $monto = (string)$monto;
+
+        $leftPart = $cant . '  ' . $modelo;  // 4 + 2 + 12 = 18
+        $space = $width - strlen($leftPart) - strlen($monto);
+        $space = max(1, $space);
+
+        return $leftPart . str_repeat(' ', $space) . $monto;
+    }
+
+    /**
+     * Formato de línea de dos columnas: Etiqueta izquierda | Valor derecha
+     * Útil para IVA, Subtotal, etc.
+     */
+    private function fmtLine($label, $value, $width = 25)
+    {
+        $label = (string)$label;
+        $value = (string)$value;
+        $space = $width - strlen($label) - strlen($value);
+        $space = max(1, $space);
+
+        return $label . str_repeat(' ', $space) . $value;
     }
 
     /**

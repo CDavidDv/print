@@ -6,7 +6,8 @@
       "Bash(powershell:*)",
       "Bash(curl:*)",
       "Bash(printf '\\\\x1B\\\\x40DOLLAR:\\\\x24\\\\n')",
-      "Bash(grep -n \"------\\\\|======\" /c/laragon/www/Print/app/Http/Controllers/PrintController.php)"
+      "Bash(grep -n \"------\\\\|======\" /c/laragon/www/Print/app/Http/Controllers/PrintController.php)",
+      "Bash(php:*)"
     ]
   }
 }
