@@ -119,10 +119,10 @@ class PrintController extends Controller
             fwrite($fp, $this->centerText('TICKET DE VENTA', $W) . "\x0A");
             fwrite($fp, str_repeat('=', $W) . "\x0A");
 
-            // Dirección de la tienda (centrada)
+            // Dirección de la tienda (centrada, sin acentos)
             $address = $config['address'] ?? [];
             foreach ($address as $line) {
-                fwrite($fp, $this->centerText($line, 32) . "\x0A");
+                fwrite($fp, $this->centerText($this->removeAccents($line), 32) . "\x0A");
             }
             fwrite($fp, "\x0A");
 
@@ -132,8 +132,8 @@ class PrintController extends Controller
             fwrite($fp, $this->centerText(str_repeat('-', 20), $W) . "\x0A");
 
             // Cliente y Vendedor
-            fwrite($fp, 'Cliente: ' . mb_substr($content['cliente'] ?? '', 0, 16) . "\x0A");
-            fwrite($fp, 'Vendedor: ' . mb_substr($content['vendedor'] ?? '', 0, 15) . "\x0A");
+            fwrite($fp, 'Cliente: ' . $this->removeAccents(mb_substr($content['cliente'] ?? '', 0, 16)) . "\x0A");
+            fwrite($fp, 'Vendedor: ' . $this->removeAccents(mb_substr($content['vendedor'] ?? '', 0, 15)) . "\x0A");
             fwrite($fp, str_repeat('-', $W) . "\x0A");
 
             // Encabezado de productos
@@ -143,7 +143,7 @@ class PrintController extends Controller
             // Items
             foreach ($content['items'] ?? [] as $item) {
                 $cant = $item['cantidad'] ?? 1;
-                $modelo = mb_substr($item['modelo'] ?? '', 0, 12);
+                $modelo = $this->removeAccents(mb_substr($item['modelo'] ?? '', 0, 12));
                 $subtotal = $currency . $this->fmtN($item['subtotal'] ?? 0);
                 fwrite($fp, $this->fmtItem($cant, $modelo, $subtotal, $W) . "\x0A");
             }
@@ -157,13 +157,13 @@ class PrintController extends Controller
             fwrite($fp, $this->fmtLine('Subtotal:', $currency . $this->fmtN($subtotal), $W) . "\x0A");
             fwrite($fp, str_repeat('-', $W) . "\x0A");
 
-            // Método de pago
+            // Metodo de pago
             $metodoPago = 'N/A';
             if (! empty($content['pagos'])) {
                 $modos = [];
                 foreach ($content['pagos'] as $p) {
                     if (! empty($p['modo_pago'])) {
-                        $modos[] = $p['modo_pago'];
+                        $modos[] = $this->removeAccents($p['modo_pago']);
                     }
                 }
                 if (! empty($modos)) {
@@ -183,8 +183,8 @@ class PrintController extends Controller
                     $qrConnector = new FilePrintConnector($qrTmp);
                     $qrPrinter = new Printer($qrConnector);
 
-                    // QR más grande: 380px para que ocupe casi todo el ancho
-                    $qrResized = $this->resizeLogo($qrPath, 380);
+                    // QR grande: 450px
+                    $qrResized = $this->resizeLogo($qrPath, 450);
                     $qrImage = EscposImage::load($qrResized, false);
                     $qrPrinter->setJustification(Printer::JUSTIFY_CENTER);
                     $qrPrinter->bitImage($qrImage);
@@ -244,7 +244,7 @@ class PrintController extends Controller
                 fwrite($fp, "\x1B\x61\x00");  // ESC a 0 - Left
             }
 
-            fwrite($fp, $this->centerText($content['footer'] ?? 'Gracias por su compra', 32) . "\x0A");
+            fwrite($fp, $this->centerText($this->removeAccents($content['footer'] ?? 'Gracias por su compra'), 32) . "\x0A");
 
             // Comandos finales
             fwrite($fp, "\x1B\x64\x03");  // ESC d 3 - Print + feed 3 lines
@@ -709,6 +709,16 @@ HTML;
     private function fmtN($n)
     {
         return number_format((float) ($n ?? 0), 2, '.', ',');
+    }
+
+    /**
+     * Eliminar acentos y caracteres especiales del español
+     */
+    private function removeAccents(string $str): string
+    {
+        $search  = ['á','é','í','ó','ú','Á','É','Í','Ó','Ú','ñ','Ñ','ü','Ü','¡','¿'];
+        $replace = ['a','e','i','o','u','A','E','I','O','U','n','N','u','U','!','?'];
+        return str_replace($search, $replace, $str);
     }
 
     /**
