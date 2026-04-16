@@ -22,6 +22,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 // Print server routes (no auth required - local only)
 Route::post('/print/thermal', [PrintController::class, 'printThermal']);
 Route::post('/print/normal', [PrintController::class, 'printNormal']);
+Route::post('/print/pdf-file', [PrintController::class, 'printPdfFile']);
+Route::post('/print/pdf-base64', [PrintController::class, 'printPdfBase64']);
 Route::get('/status', [PrintController::class, 'status']);
 Route::get('/config', [PrintController::class, 'getConfig']);
 Route::put('/config', [PrintController::class, 'updateConfig']);

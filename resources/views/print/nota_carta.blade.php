@@ -13,40 +13,41 @@
 
         body {
             font-family: 'Arial', sans-serif;
-            font-size: 11pt;
+            font-size: 10.1pt;
             color: #000;
             line-height: 1.4;
         }
 
         @page {
             size: letter;
-            margin: 15mm 14mm;
+            margin: 13.8mm 12.9mm;
         }
 
         .container {
-            max-width: 100%;
-            margin: 0 auto;
+            width: 100%;
+            margin: 0;
+            padding: 0;
         }
 
         /* Encabezado */
         .header {
             text-align: center;
-            margin-bottom: 20pt;
+            margin-bottom: 18.4pt;
             border-bottom: 2px solid #000;
-            padding-bottom: 10pt;
+            padding-bottom: 9.2pt;
         }
 
         .header h1 {
-            font-size: 18pt;
+            font-size: 16.6pt;
             font-weight: bold;
-            margin-bottom: 5pt;
+            margin-bottom: 4.6pt;
         }
 
         .header-info {
             display: flex;
             justify-content: space-between;
-            font-size: 10pt;
-            margin-top: 10pt;
+            font-size: 9.2pt;
+            margin-top: 9.2pt;
         }
 
         .header-info div {
@@ -55,22 +56,23 @@
 
         /* Cliente */
         .client-info {
-            margin-bottom: 15pt;
-            padding: 8pt;
+            margin-bottom: 13.8pt;
+            padding: 7.36pt;
             background-color: #f5f5f5;
             border: 1px solid #ccc;
         }
 
         .client-info p {
-            margin: 3pt 0;
-            font-size: 10pt;
+            margin: 2.76pt 0;
+            font-size: 9.2pt;
         }
 
         /* Tabla de productos */
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 15pt;
+            margin-bottom: 13.8pt;
+            font-size: 9.2pt;
         }
 
         thead {
@@ -79,17 +81,17 @@
         }
 
         thead th {
-            padding: 8pt;
+            padding: 7.36pt;
             text-align: left;
             font-weight: bold;
-            font-size: 10pt;
+            font-size: 9.2pt;
             border: 1px solid #000;
         }
 
         tbody td {
-            padding: 6pt 8pt;
+            padding: 5.52pt 7.36pt;
             border-bottom: 1px solid #ddd;
-            font-size: 10pt;
+            font-size: 9.2pt;
         }
 
         tbody tr:last-child td {
@@ -106,7 +108,7 @@
 
         /* Sección de producto */
         .item-name {
-            font-size: 9pt;
+            font-size: 8.28pt;
             color: #666;
             font-style: italic;
         }
@@ -115,23 +117,23 @@
         .totals {
             width: 50%;
             margin-left: auto;
-            margin-bottom: 15pt;
-            font-size: 11pt;
+            margin-bottom: 13.8pt;
+            font-size: 10.1pt;
         }
 
         .totals-row {
             display: flex;
             justify-content: space-between;
-            padding: 5pt 0;
+            padding: 4.6pt 0;
             border-bottom: 1px solid #ddd;
         }
 
         .totals-row.total {
             font-weight: bold;
             border-bottom: 2px solid #000;
-            font-size: 12pt;
-            padding: 8pt 0;
-            margin-top: 5pt;
+            font-size: 11.04pt;
+            padding: 7.36pt 0;
+            margin-top: 4.6pt;
         }
 
         .totals-row span:first-child {
@@ -139,51 +141,52 @@
         }
 
         .totals-row span:last-child {
-            width: 80pt;
+            width: 73.6pt;
             text-align: right;
         }
 
         /* Pagos */
         .payments {
-            margin-bottom: 15pt;
-            padding: 8pt;
+            margin-bottom: 13.8pt;
+            padding: 7.36pt;
             background-color: #f9f9f9;
             border: 1px solid #ddd;
         }
 
         .payments-title {
             font-weight: bold;
-            margin-bottom: 5pt;
-            font-size: 10pt;
+            margin-bottom: 4.6pt;
+            font-size: 9.2pt;
         }
 
         .payment-item {
             display: flex;
             justify-content: space-between;
-            font-size: 10pt;
-            margin: 3pt 0;
+            font-size: 9.2pt;
+            margin: 2.76pt 0;
         }
 
         /* Footer */
         .footer {
             text-align: center;
-            margin-top: 20pt;
-            padding-top: 10pt;
+            margin-top: 18.4pt;
+            padding-top: 9.2pt;
             border-top: 1px solid #000;
-            font-size: 9pt;
+            font-size: 8.28pt;
             color: #666;
         }
 
         @media print {
             @page {
                 size: letter;
-                margin: 15mm 14mm;
+                margin: 13.8mm 12.9mm;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
+    {{-- Escala del PDF: {{ $scale ?? 1.0 }} --}}
         <!-- Encabezado -->
         <div class="header">
             <h1>{{ strtoupper($content['title'] ?? 'NOTA DE VENTA') }}</h1>

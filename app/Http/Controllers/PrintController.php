@@ -21,11 +21,12 @@ class PrintController extends Controller
             'thermalPrinter' => 'POS-58',
             'normalPrinter' => 'Microsoft Print to PDF',
             'normalPaperSize' => 'Letter',
+            'normalPrintQuality' => -1,
             'currency' => '$',
             'address' => [
                 'Plaza las Américas, Local',
                 '4B, Valle de San Javier,',
-                'Pachuca'
+                'Pachuca, C.P. 42086',
             ],
             'defaults' => [
                 'title' => 'NOTA DE VENTA',
@@ -106,38 +107,44 @@ class PrintController extends Controller
             // Font A funciona correctamente, cualquier cambio rompe el code page
             // Dejar todo como está después del ESC t 0
 
-            $W = 32; // Font A standard = ~32 caracteres por línea
-
-            // PASO 4: Nuevo formato de ticket (estructura según el diseño requerido)
-            $W = 25; // Ancho para separadores
-
-            // Separador después del logo
-            fwrite($fp, str_repeat('-', 25) . "\x0A");
-
-            // Separadores y título
+            // PASO 4: Nuevo formato de ticket — ancho fijo 32 en todo
+            $W = 32;
+            // Título centrado con hardware ESC/POS
             fwrite($fp, str_repeat('=', $W) . "\x0A");
-            fwrite($fp, $this->centerText('TICKET DE VENTA', $W) . "\x0A");
-            fwrite($fp, str_repeat('=', $W) . "\x0A");
+            fwrite($fp, "\x1B\x61\x01");  // ESC a 1 - Center
+            fwrite($fp, 'TICKET DE VENTA' . "\x0A");
 
-            // Dirección de la tienda (centrada, sin acentos)
+            // Dirección de la tienda centrada con hardware - Font B (pequeño)
+            fwrite($fp, "\x1B\x4D\x01");  // Font B
             $address = $config['address'] ?? [];
             foreach ($address as $line) {
-                fwrite($fp, $this->centerText($this->removeAccents($line), 32) . "\x0A");
+                fwrite($fp, $this->removeAccents($line) . "\x0A");
             }
+            fwrite($fp, "\x1B\x4D\x00");  // Font A
+            fwrite($fp, "\x1B\x61\x00");  // ESC a 0 - Left
+            fwrite($fp, str_repeat('=', $W) . "\x0A");
             fwrite($fp, "\x0A");
 
-            // Folio y Fecha
-            fwrite($fp, $this->centerText('Folio: ' . ($content['folio'] ?? ''), $W) . "\x0A");
+            // Folio y Fecha (izquierda) - Font B (pequeño)
+            fwrite($fp, "\x1B\x4D\x01");  // Font B
+            fwrite($fp, 'Folio: ' . ($content['folio'] ?? '') . "\x0A");
             fwrite($fp, 'Fecha: ' . ($content['fecha'] ?? '') . "\x0A");
-            fwrite($fp, $this->centerText(str_repeat('-', 20), $W) . "\x0A");
+            fwrite($fp, "\x1B\x4D\x00");  // Font A
+            fwrite($fp, str_repeat('-', 20) . "\x0A");
 
-            // Cliente y Vendedor
-            fwrite($fp, 'Cliente: ' . $this->removeAccents(mb_substr($content['cliente'] ?? '', 0, 16)) . "\x0A");
-            fwrite($fp, 'Vendedor: ' . $this->removeAccents(mb_substr($content['vendedor'] ?? '', 0, 15)) . "\x0A");
+            // Cliente y Vendedor - Font B (pequeño)
+            fwrite($fp, "\x1B\x4D\x01");  // Font B
+            fwrite($fp, 'Cliente: ' . $this->removeAccents(mb_substr($content['cliente'] ?? '', 0, 23)) . "\x0A");
+            fwrite($fp, 'Vendedor: ' . $this->removeAccents(mb_substr($content['vendedor'] ?? '', 0, 22)) . "\x0A");
+            fwrite($fp, "\x1B\x4D\x00");  // Font A
             fwrite($fp, str_repeat('-', $W) . "\x0A");
 
-            // Encabezado de productos
-            fwrite($fp, 'Cant  Modelo        Monto' . "\x0A");
+            // Encabezado de productos - Font B + Bold (pequeño pero negritas)
+            fwrite($fp, "\x1B\x4D\x01");  // Font B
+            fwrite($fp, "\x1B\x45\x01");  // Bold ON
+            fwrite($fp, $this->fmtItem('Cant', 'Modelo', 'Monto', $W) . "\x0A");
+            fwrite($fp, "\x1B\x45\x00");  // Bold OFF
+            fwrite($fp, "\x1B\x4D\x00");  // Font A
             fwrite($fp, str_repeat('-', $W) . "\x0A");
 
             // Items
@@ -146,45 +153,57 @@ class PrintController extends Controller
                 $modelo = $this->removeAccents(mb_substr($item['modelo'] ?? '', 0, 12));
                 $subtotal = $currency . $this->fmtN($item['subtotal'] ?? 0);
                 fwrite($fp, $this->fmtItem($cant, $modelo, $subtotal, $W) . "\x0A");
+
+                // Second line: nombre + unit price in Font B (42 chars wide, sin símbolo)
+                $nombre = $this->removeAccents(mb_substr($item['nombre'] ?? '', 0, 28));
+                $precio = $this->fmtN($item['precio'] ?? 0);  // Sin símbolo para evitar yen en Font B
+                $Wb = 42; // Font B width on POS-58
+                $space = max(1, $Wb - strlen($nombre) - strlen($precio));
+                $detLine = $nombre . str_repeat(' ', $space) . $precio;
+                fwrite($fp, "\x1B\x4D\x01" . $detLine . "\x0A" . "\x1B\x4D\x00");
             }
 
             fwrite($fp, str_repeat('-', $W) . "\x0A");
 
-            // IVA (calculado al 16% si no viene en el request)
+            // IVA y Subtotal
             $subtotal = floatval($content['subtotal'] ?? 0);
             $iva = $content['iva'] ?? ($subtotal * 0.16);
             fwrite($fp, $this->fmtLine('IVA:', $currency . $this->fmtN($iva), $W) . "\x0A");
             fwrite($fp, $this->fmtLine('Subtotal:', $currency . $this->fmtN($subtotal), $W) . "\x0A");
             fwrite($fp, str_repeat('-', $W) . "\x0A");
 
-            // Metodo de pago
+            // Metodo de pago - Font B (pequeño)
             $metodoPago = 'N/A';
             if (! empty($content['pagos'])) {
                 $modos = [];
                 foreach ($content['pagos'] as $p) {
                     if (! empty($p['modo_pago'])) {
-                        $modos[] = $this->removeAccents($p['modo_pago']);
+                        $modos[] = $this->removeAccents(ucfirst(mb_strtolower($p['modo_pago'])));
                     }
                 }
                 if (! empty($modos)) {
                     $metodoPago = implode(', ', $modos);
                 }
+            } elseif (! empty($content['forma_pago'])) {
+                $metodoPago = $this->removeAccents($content['forma_pago']);
             }
-            fwrite($fp, 'Metodo de pago: ' . mb_substr($metodoPago, 0, 9) . "\x0A");
+            fwrite($fp, "\x1B\x4D\x01");  // Font B
+            fwrite($fp, 'Metodo de pago: ' . mb_substr($metodoPago, 0, 16) . "\x0A");
+            fwrite($fp, "\x1B\x4D\x00");  // Font A
             fwrite($fp, "\x0A");
 
-            // QR de facturación (primero)
+            // QR de facturación
+            fwrite($fp, "\x1B\x4D\x01");  // Font B
+            fwrite($fp, 'Para facturacion:' . "\x0A");
+            fwrite($fp, "\x1B\x4D\x00");  // Font A
             $qrPath = public_path('images/facturacionqr.png');
             if (file_exists($qrPath)) {
                 try {
-                    fwrite($fp, $this->centerText('Para facturacion:', 32) . "\x0A");
-
                     $qrTmp = tempnam(sys_get_temp_dir(), 'qr_').'.prn';
                     $qrConnector = new FilePrintConnector($qrTmp);
                     $qrPrinter = new Printer($qrConnector);
 
-                    // QR grande: 450px
-                    $qrResized = $this->resizeLogo($qrPath, 450);
+                    $qrResized = $this->resizeImage($qrPath, 150);
                     $qrImage = EscposImage::load($qrResized, false);
                     $qrPrinter->setJustification(Printer::JUSTIFY_CENTER);
                     $qrPrinter->bitImage($qrImage);
@@ -192,8 +211,6 @@ class PrintController extends Controller
                     $qrPrinter->close();
 
                     $qrBytes = file_get_contents($qrTmp);
-
-                    // Remover ESC @ inicial si existe
                     if (substr($qrBytes, 0, 2) === "\x1B\x40") {
                         $qrBytes = substr($qrBytes, 2);
                     }
@@ -205,46 +222,39 @@ class PrintController extends Controller
                         @unlink($qrResized);
                     }
 
-                    // Reiniciar code page después del QR
-                    fwrite($fp, "\x1B\x74\x00");  // ESC t 0 - PC437
+                    fwrite($fp, "\x1B\x74\x00");  // Reiniciar code page
                     fwrite($fp, "\x0A");
 
                     \Log::info('QR image added successfully');
                 } catch (\Exception $e) {
                     \Log::error('QR error: ' . $e->getMessage());
-                    // Continuar sin QR
                 }
-            }
+            } else {
+                // Fallback: QR nativo ESC/POS generado por la impresora
+                $qrData = "https://goo.su/k22xUat";
+                $dataLen = strlen($qrData) + 3;
+                $pL = $dataLen & 0xFF;
+                $pH = ($dataLen >> 8) & 0xFF;
 
-            fwrite($fp, "\x0A");
-
-            // Código de barras CODE128 del folio (después del QR)
-            if (! empty($content['folio'])) {
-                $folioStr = (string)$content['folio'];
-
-                // Centrar barcode
-                fwrite($fp, "\x1B\x61\x01");  // ESC a 1 - Center
-
-                // Configurar altura del barcode
-                fwrite($fp, "\x1D\x68\x50");  // GS h 80 (altura 80 dots)
-
-                // Ancho del módulo
-                fwrite($fp, "\x1D\x77\x02");  // GS w 2 (ancho módulo 2)
-
-                // HRI (Human Readable Interpretation) - mostrar texto debajo
-                fwrite($fp, "\x1D\x48\x02");  // GS H 2 (mostrar HRI debajo)
-
-                // Imprimir CODE128
-                fwrite($fp, "\x1D\x6B\x49");  // GS k I (CODE128 extended)
-                fwrite($fp, chr(strlen($folioStr)));  // Longitud
-                fwrite($fp, $folioStr);  // Datos
+                fwrite($fp, "\x1B\x61\x01");                                              // Centrar
+                fwrite($fp, "\x1D\x28\x6B\x04\x00\x31\x41\x32\x00");                     // Modelo 2
+                fwrite($fp, "\x1D\x28\x6B\x03\x00\x31\x43\x05");                         // Modulo size 5 (pequeño)
+                fwrite($fp, "\x1D\x28\x6B\x03\x00\x31\x45\x33");                         // Error correction M
+                fwrite($fp, "\x1D\x28\x6B" . chr($pL) . chr($pH) . "\x31\x50\x30" . $qrData); // Datos
+                fwrite($fp, "\x1D\x28\x6B\x03\x00\x31\x51\x30");                         // Imprimir
+                fwrite($fp, "\x1B\x61\x00");                                              // Restaurar left
                 fwrite($fp, "\x0A");
 
-                // Restaurar alineación izquierda
-                fwrite($fp, "\x1B\x61\x00");  // ESC a 0 - Left
+                \Log::info('QR nativo ESC/POS impreso (fallback)');
             }
 
-            fwrite($fp, $this->centerText($this->removeAccents($content['footer'] ?? 'Gracias por su compra'), 32) . "\x0A");
+            fwrite($fp, "\x1B\x4D\x00");  // Font A (asegurar)
+            fwrite($fp, "\x0A");
+
+            // Footer - Font B (pequeño)
+            fwrite($fp, "\x1B\x4D\x01");  // Font B
+            fwrite($fp, $this->removeAccents($content['footer'] ?? 'Gracias por su compra') . "\x0A");
+            fwrite($fp, "\x1B\x4D\x00");  // Font A
 
             // Comandos finales
             fwrite($fp, "\x1B\x64\x03");  // ESC d 3 - Print + feed 3 lines
@@ -501,27 +511,213 @@ HTML;
         $printerName = $request->input('printer') ?? $config['normalPrinter'];
 
         try {
-            // Generar PDF con dompdf
+            // Generar PDF con dompdf en tamaño Letter
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('print.nota_carta', ['content' => $content])
                 ->setPaper('letter', 'portrait');
+
             $pdfContent = $pdf->output();
 
             // Guardar en temp
             $tmpPath = tempnam(sys_get_temp_dir(), 'nota').'.pdf';
             file_put_contents($tmpPath, $pdfContent);
 
-            // Enviar a impresora via PowerShell
-            $escaped = str_replace("'", "''", $tmpPath);
-            $printerEscaped = str_replace("'", "''", $printerName);
-            shell_exec("powershell -NoProfile -Command \"Start-Process -FilePath '$escaped' -Verb Print -Wait\"");
+            $result = $this->sendPdfToPrinter($tmpPath, $printerName);
 
             // Cleanup
-            unlink($tmpPath);
+            @unlink($tmpPath);
+
+            if (! $result['ok']) {
+                return response()->json(['error' => $result['error']], 500);
+            }
 
             return response()->json(['ok' => true, 'printer' => $printerName], 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * POST /api/print/pdf-file - Imprime un PDF ya existente en disco
+     * Body JSON: { "pdfPath": "C:\\ruta\\al\\archivo.pdf", "printer": "Nombre Impresora" }
+     */
+    public function printPdfFile(Request $request)
+    {
+        $config = $this->getConfigData();
+        $pdfPath = $request->input('pdfPath');
+        $printerName = $request->input('printer') ?? $config['normalPrinter'];
+
+        if (empty($pdfPath)) {
+            return response()->json(['error' => 'El campo pdfPath es requerido'], 422);
+        }
+
+        // Normalizar separadores de ruta
+        $pdfPath = str_replace('/', '\\', $pdfPath);
+
+        if (! file_exists($pdfPath)) {
+            return response()->json(['error' => "El archivo no existe: $pdfPath"], 404);
+        }
+
+        if (strtolower(pathinfo($pdfPath, PATHINFO_EXTENSION)) !== 'pdf') {
+            return response()->json(['error' => 'El archivo debe ser un PDF'], 422);
+        }
+
+        $result = $this->sendPdfToPrinter($pdfPath, $printerName);
+
+        if (! $result['ok']) {
+            \Log::error('pdf-file print failed', $result);
+            return response()->json(['error' => $result['error'], 'detail' => $result['output'] ?? ''], 500);
+        }
+
+        return response()->json(['ok' => true, 'printer' => $printerName, 'file' => $pdfPath], 200);
+    }
+
+    /**
+     * Envía un archivo PDF a la impresora usando PowerShell.
+     * Intenta SumatraPDF primero (silencioso), luego Shell PrintTo.
+     */
+    private function sendPdfToPrinter(string $pdfPath, string $printerName): array
+    {
+        // Escapar para PowerShell (comillas simples dentro de single-quoted strings se duplican)
+        $escapedPath    = str_replace("'", "''", $pdfPath);
+        $escapedPrinter = str_replace("'", "''", $printerName);
+
+        // Posibles rutas de SumatraPDF (instalación típica en Windows)
+        $sumatraExe = $this->findSumatraPDF();
+        if ($sumatraExe !== null) {
+            $escapedExe  = str_replace("'", "''", $sumatraExe);
+            $qualityCode = $this->getPrintQualityCode($printerName);
+
+            $psScript = <<<PS
+\$printer  = '$escapedPrinter'
+\$sumatra  = '$escapedExe'
+\$pdfPath  = '$escapedPath'
+
+# Guardar calidad actual y subir a máxima
+try {
+    \$cfg = Get-PrintConfiguration -PrinterName \$printer -ErrorAction Stop
+    \$prevQuality = \$cfg.PrintQuality
+    Set-PrintConfiguration -PrinterName \$printer -PrintQuality $qualityCode -ErrorAction SilentlyContinue
+} catch { \$prevQuality = \$null }
+
+# Imprimir
+& \$sumatra -print-to \$printer -print-settings 'shrink' -silent \$pdfPath
+\$code = \$LASTEXITCODE
+
+# Restaurar calidad original
+if (\$prevQuality -ne \$null) {
+    Set-PrintConfiguration -PrinterName \$printer -PrintQuality \$prevQuality -ErrorAction SilentlyContinue
+}
+
+exit \$code
+PS;
+            $psFile = tempnam(sys_get_temp_dir(), 'sumatra_').'.ps1';
+            file_put_contents($psFile, $psScript);
+            exec("powershell -NoProfile -ExecutionPolicy Bypass -File \"$psFile\" 2>&1", $output, $code);
+            @unlink($psFile);
+
+            if ($code === 0) {
+                \Log::info('PDF printed via SumatraPDF', ['printer' => $printerName, 'exe' => $sumatraExe]);
+                return ['ok' => true];
+            }
+            \Log::warning('SumatraPDF failed, falling back', ['output' => implode("\n", $output)]);
+        }
+
+        // Intento 1: Adobe Acrobat /t (imprime directamente a la impresora indicada)
+        $acrobatExe = $this->findAcrobat() ?? '';
+        $escapedAcrobat = str_replace("'", "''", $acrobatExe);
+
+        $psScript = <<<PS
+\$pdfPath = '$escapedPath'
+\$printer = '$escapedPrinter'
+
+\$acrobat = '$escapedAcrobat'
+if (\$acrobat -ne '' -and (Test-Path \$acrobat)) {
+    try {
+        \$proc = Start-Process -FilePath \$acrobat -ArgumentList "/h /t `"\$pdfPath`" `"\$printer`"" -Wait -PassThru -WindowStyle Hidden -ErrorAction Stop
+        Start-Sleep -Seconds 8
+        # Cerrar Acrobat si quedó abierto
+        Get-Process -Name 'Acrobat' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Write-Host "OK:Acrobat"
+        exit 0
+    } catch {
+        Write-Warning "Acrobat failed: \$(\$_.Exception.Message)"
+    }
+}
+
+# Intento 2: poner como impresora predeterminada y usar -Verb Print
+try {
+    \$printerObj = Get-CimInstance -Class Win32_Printer -Filter "Name='\$($printer -replace "'","''")'"
+    if (\$null -eq \$printerObj) { throw "Impresora no encontrada: \$printer" }
+
+    \$currentDefault = (Get-CimInstance -Class Win32_Printer -Filter "Default=True" | Select-Object -First 1).Name
+    Invoke-CimMethod -InputObject \$printerObj -MethodName SetDefaultPrinter | Out-Null
+
+    Start-Process -FilePath \$pdfPath -Verb Print -Wait -WindowStyle Hidden -ErrorAction Stop
+    Start-Sleep -Seconds 6
+
+    if (\$currentDefault -and \$currentDefault -ne \$printer) {
+        \$origObj = Get-CimInstance -Class Win32_Printer -Filter "Name='\$($currentDefault -replace "'","''")'"
+        if (\$origObj) { Invoke-CimMethod -InputObject \$origObj -MethodName SetDefaultPrinter | Out-Null }
+    }
+
+    Write-Host "OK:SetDefault+Print"
+    exit 0
+} catch {
+    Write-Error "SetDefault+Print failed: \$(\$_.Exception.Message)"
+    exit 1
+}
+PS;
+
+        $psFile = tempnam(sys_get_temp_dir(), 'pdfprint_').'.ps1';
+        file_put_contents($psFile, $psScript);
+
+        $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File \"$psFile\" 2>&1";
+        exec($cmd, $output, $code);
+        @unlink($psFile);
+
+        $outputStr = implode("\n", $output ?? []);
+
+        if ($code !== 0) {
+            \Log::error('PDF print failed (both methods)', ['printer' => $printerName, 'output' => $outputStr]);
+            return ['ok' => false, 'error' => 'No se pudo imprimir el PDF', 'output' => $outputStr];
+        }
+
+        $method = str_contains($outputStr, 'OK:PrintTo') ? 'PrintTo verb' : 'SetDefault+Print verb';
+        \Log::info("PDF printed via $method", ['printer' => $printerName, 'file' => $pdfPath]);
+        return ['ok' => true];
+    }
+
+    /**
+     * POST /api/print/pdf-base64 - Imprime un PDF enviado como base64
+     * Body JSON: { "pdfBase64": "<base64>", "printer": "Nombre Impresora" }
+     */
+    public function printPdfBase64(Request $request)
+    {
+        $config = $this->getConfigData();
+        $pdfBase64 = $request->input('pdfBase64');
+        $printerName = $request->input('printer') ?? $config['normalPrinter'];
+
+        if (empty($pdfBase64)) {
+            return response()->json(['error' => 'El campo pdfBase64 es requerido'], 422);
+        }
+
+        $pdfContent = base64_decode($pdfBase64, strict: true);
+        if ($pdfContent === false) {
+            return response()->json(['error' => 'El base64 proporcionado no es válido'], 422);
+        }
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'nota_b64_').'.pdf';
+        file_put_contents($tmpPath, $pdfContent);
+
+        $result = $this->sendPdfToPrinter($tmpPath, $printerName);
+        @unlink($tmpPath);
+
+        if (! $result['ok']) {
+            \Log::error('pdf-base64 print failed', $result);
+            return response()->json(['error' => $result['error'], 'detail' => $result['output'] ?? ''], 500);
+        }
+
+        return response()->json(['ok' => true, 'printer' => $printerName], 200);
     }
 
     /**
@@ -574,6 +770,9 @@ HTML;
             if ($request->has('normalPaperSize')) {
                 $config['normalPaperSize'] = $request->input('normalPaperSize');
             }
+            if ($request->has('normalPrintQuality')) {
+                $config['normalPrintQuality'] = (int) $request->input('normalPrintQuality');
+            }
             if ($request->has('currency')) {
                 $config['currency'] = $request->input('currency');
             }
@@ -590,6 +789,104 @@ HTML;
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Retorna el código de calidad de impresión máxima para el driver de la impresora.
+     * Valores estándar Windows DEVMODE: -1=High, -2=Medium, -3=Low, -4=Draft.
+     * Para impresoras que reportan DPI se usa el valor más alto disponible.
+     */
+    private function getPrintQualityCode(string $printerName): int
+    {
+        $config = $this->getConfigData();
+        return (int) ($config['normalPrintQuality'] ?? -1);
+    }
+
+    /**
+     * Busca SumatraPDF en ubicaciones comunes, PATH y registro de Windows.
+     * Retorna la ruta al ejecutable o null si no está instalado.
+     */
+    private function findSumatraPDF(): ?string
+    {
+        // 1. Rutas fijas más comunes
+        $candidates = [
+            'C:\\Program Files\\SumatraPDF\\SumatraPDF.exe',
+            'C:\\Program Files (x86)\\SumatraPDF\\SumatraPDF.exe',
+        ];
+
+        // 2. Carpeta AppData\Local de todos los perfiles de usuario
+        $usersRoot = 'C:\\Users';
+        if (is_dir($usersRoot)) {
+            foreach (scandir($usersRoot) as $user) {
+                if ($user === '.' || $user === '..') continue;
+                $candidates[] = "$usersRoot\\$user\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe";
+            }
+        }
+
+        foreach ($candidates as $path) {
+            if (file_exists($path)) {
+                return $path;
+            }
+        }
+
+        // 3. Buscar en el PATH del sistema
+        exec('where SumatraPDF.exe 2>NUL', $whereOut, $whereCode);
+        if ($whereCode === 0 && !empty($whereOut[0]) && file_exists(trim($whereOut[0]))) {
+            return trim($whereOut[0]);
+        }
+
+        // 4. Buscar en el registro de Windows
+        exec('reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\SumatraPDF.exe" /ve 2>NUL', $regOut, $regCode);
+        if ($regCode === 0) {
+            foreach ($regOut as $line) {
+                if (str_contains($line, '.exe')) {
+                    preg_match('/[A-Za-z]:\\.+\.exe/i', $line, $m);
+                    if (!empty($m[0]) && file_exists($m[0])) {
+                        return $m[0];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Busca Adobe Acrobat (DC o Reader) en ubicaciones comunes y registro.
+     * Retorna la ruta al ejecutable o null si no está instalado.
+     */
+    private function findAcrobat(): ?string
+    {
+        $candidates = [
+            'C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe',
+            'C:\\Program Files (x86)\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe',
+            'C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe',
+            'C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe',
+            'C:\\Program Files (x86)\\Adobe\\Reader 11.0\\Reader\\AcroRd32.exe',
+        ];
+
+        foreach ($candidates as $path) {
+            if (file_exists($path)) {
+                return $path;
+            }
+        }
+
+        // Registro
+        foreach (['Acrobat.exe', 'AcroRd32.exe'] as $exe) {
+            exec("reg query \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\$exe\" /ve 2>NUL", $regOut, $regCode);
+            if ($regCode === 0) {
+                foreach ($regOut as $line) {
+                    if (str_contains($line, '.exe')) {
+                        preg_match('/[A-Za-z]:\\.+\.exe/i', $line, $m);
+                        if (!empty($m[0]) && file_exists($m[0])) {
+                            return $m[0];
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     // ────── Helpers ──────────────────────────────────────────────────────
@@ -709,6 +1006,38 @@ HTML;
     private function fmtN($n)
     {
         return number_format((float) ($n ?? 0), 2, '.', ',');
+    }
+
+    /**
+     * Redimensionar imagen a targetWidth exacto (puede escalar hacia arriba o abajo)
+     * Usada para el QR de facturación
+     */
+    private function resizeImage(string $srcPath, int $targetWidth): string
+    {
+        [$origW, $origH, $type] = getimagesize($srcPath);
+
+        $src = match ($type) {
+            IMAGETYPE_PNG  => imagecreatefrompng($srcPath),
+            IMAGETYPE_JPEG => imagecreatefromjpeg($srcPath),
+            IMAGETYPE_GIF  => imagecreatefromgif($srcPath),
+            default        => throw new \RuntimeException('Formato de imagen no soportado'),
+        };
+
+        $newW = $targetWidth;
+        $newH = (int) round($origH * ($newW / $origW));
+
+        $dst = imagecreatetruecolor($newW, $newH);
+        imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $origW, $origH);
+        imagedestroy($src);
+
+        imagefilter($dst, IMG_FILTER_GRAYSCALE);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'qr_').'.png';
+        imagepng($dst, $tmpPath);
+        imagedestroy($dst);
+
+        return $tmpPath;
     }
 
     /**
