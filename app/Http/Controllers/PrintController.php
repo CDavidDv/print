@@ -128,7 +128,7 @@ class PrintController extends Controller
             // Folio y Fecha (izquierda) - Font B (pequeño)
             fwrite($fp, "\x1B\x4D\x01");  // Font B
             fwrite($fp, 'Folio: ' . ($content['folio'] ?? '') . "\x0A");
-            fwrite($fp, 'Fecha: ' . ($content['fecha'] ?? '') . ' ' . date('H:i') . "\x0A");
+            fwrite($fp, 'Fecha: ' . ($content['fecha'] ?? '') . ' ' . date('H:i', strtotime('-1 hour')) . "\x0A");
             fwrite($fp, "\x1B\x4D\x00");  // Font A
             fwrite($fp, str_repeat('-', 20) . "\x0A");
 
